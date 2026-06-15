@@ -22,13 +22,13 @@ def load_ocr():
 
 reader = load_ocr()
 
-st.title("🚗 汽車保養工單系統 (馳加單據高辨識率版)")
-st.write("已強化 AI 影像處理演算法，提升對點矩陣列印字體與表格工單的辨識能力。")
+st.title("🚗 汽車保養工單系統 (多欄位 AI 擷取版)")
+st.write("上傳工單照片，AI 將自動擷取：車牌號碼、總金額、行駛里程、保養項目明細。")
 
 # --- 2. 初始化資料庫 (在記憶體中模擬) ---
 if "order_list" not in st.session_state:
     st.session_state.order_list = [
-        {"工單單號": "D260513-375", "車牌號碼": "ANV-1055", "保養項目": "輪胎更換與定位", "保養類別": "輪胎定位", "金額": 24300},
+        {"工單單號": "D260513-375", "車牌號碼": "ANV-1055", "行駛里程": "140,029", "保養項目": "215/55R17 Michelin PRIMACY 5, 輪胎拆裝工資, 輪胎平衡校正, 氮氣填充, 四輪定位-電腦3D, 煞車來令片(前/WTC), 力魔LM3318-快速清潔噴劑, 底盤拆裝工資, 煞車來令片(後/WTC), 煞車盤(後)", "保養類別": "輪胎定位", "金額": 24300},
     ]
 
 # --- 3. AI 影像自動擷取區塊 ---
@@ -36,25 +36,24 @@ st.header("📸 AI 工單自動擷取")
 
 extracted_wo = ""
 extracted_plate = ""
+extracted_mileage = ""
 extracted_price = 0
+extracted_items = []
 
 input_method = st.radio("請選擇輸入方式：", ["從手機相簿上傳照片/檔案", "使用手機相機現場拍照"])
 img_file = st.file_uploader("請選擇工單照片", type=["jpg", "jpeg", "png"]) if input_method == "從手機相簿上傳照片/檔案" else st.camera_input("請對準工單拍照")
 
 if img_file is not None:
-    # 讀取圖片並轉為 OpenCV 格式
     image = Image.open(img_file)
     img_np = np.array(image)
     
-    # 影像預處理：轉灰階並強化對比度，讓點矩陣淡字變清晰
+    # 影像預處理：強化對比度
     gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-    enhanced_img = cv2.equalizeHist(gray) # 直方圖均衡化，強化文字邊緣
+    enhanced_img = cv2.equalizeHist(gray)
     
-    with st.spinner("AI 正在使用高階影像演算法解析中..."):
-        # 進行全文辨識
+    with st.spinner("AI 正在分析工單資訊中..."):
         results = reader.readtext(enhanced_img, detail=1, paragraph=False)
         
-        # 整理辨識結果，保留文字、信心度與位置
         all_texts = []
         raw_lines = []
         for res in results:
@@ -64,28 +63,44 @@ if img_file is not None:
             
         full_text_block = "||".join(all_texts)
         
-        # 開啟偵錯工具，讓您看見 AI 到底讀到了什麼字
-        with st.expander("🔍 檢視 AI 影像除錯紀錄 (若辨識不到請點開此處)"):
-            st.write("AI 辨識出的文字片段：", raw_lines)
+        # 顯示除錯紀錄，方便查看辨識字體
+        with st.expander("🔍 檢視 AI 影像除錯紀錄"):
+            st.write(raw_lines)
 
-        # ---- 演算法升級：模糊匹配與前後文搜尋 ----
+        # ---- 核心關鍵字擷取演算法 ----
         
-        # 1. 擷取車牌號碼 (包含台灣新舊式車牌正規表示法)
+        # 1. 擷取車牌號碼 (尋找「車牌」或「車號」關鍵字)
         plate_pattern = r'[A-Z0-9]{2,4}[-─][A-Z0-9]{2,4}'
         plates_found = re.findall(plate_pattern, full_text_block)
         if plates_found:
             extracted_plate = plates_found[0]
         else:
-            # 模糊搜尋：尋找「車牌」或「車號」關鍵字週邊的英文數字
             for i, text in enumerate(all_texts):
-                if "車牌" in text or "車號" in text or "車輛" in text:
+                if any(k in text for k in ["車牌", "車號", "車輛"]):
                     for offset in range(0, 3):
                         if i + offset < len(all_texts):
-                            candidate = all_texts[i + offset]
-                            clean_candidate = re.sub(r'[^\w-]', '', candidate)
-                            if len(clean_candidate) >= 6 and any(char.isdigit() for char in clean_candidate):
-                                extracted_plate = clean_candidate
+                            candidate = re.sub(r'[^\w-]', '', all_texts[i + offset])
+                            if len(candidate) >= 6 and any(c.isdigit() for c in candidate):
+                                extracted_plate = candidate
                                 break
                 if extracted_plate: break
 
-        # 2.
+        # 2. 擷取行駛里程 (尋找「里程」關鍵字)
+        for i, text in enumerate(all_texts):
+            if "里程" in text or "公里" in text:
+                for offset in range(0, 3):
+                    if i + offset < len(all_texts):
+                        candidate = all_texts[i + offset]
+                        # 擷取包含逗號或純數字的組合 (例如 140,029)
+                        mileage_match = re.search(r'[\d,]+', candidate)
+                        if mileage_match and len(mileage_match.group(0)) >= 3:
+                            extracted_mileage = mileage_match.group(0)
+                            break
+            if extracted_mileage: break
+
+        # 3. 擷取總金額 (尋找「總金額」或「合計」關鍵字)
+        for i, text in enumerate(all_texts):
+            if any(k in text for k in ["總金額", "金額", "總計", "合計"]):
+                combined_look = "".join(all_texts[i:i+4])
+                digits = re.findall(r'[\d,.]+', combined_look)
+                for d_str in
