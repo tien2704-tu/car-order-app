@@ -2,3 +2,6 @@ streamlit
 pandas
 openpyxl
 plotly
+easyocr
+pillow
+opencv-python-headless
