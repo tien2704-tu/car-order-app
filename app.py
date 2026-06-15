@@ -4,6 +4,7 @@ import plotly.express as px
 from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.chart import PieChart, Reference
+from openpyxl.chart.label import DataLabelList
 from openpyxl.utils.dataframe import dataframe_to_rows
 
 # 設定網頁標題與 RWD 手機版配置
@@ -12,7 +13,7 @@ st.set_page_config(page_title="汽車保養工單系統", layout="centered")
 st.title("🚗 汽車保養工單系統")
 st.write("填寫下方表單以記錄工單，並可即時查看統計與下載 Excel。")
 
-# --- 1. 初始化資料庫 (在記憶體中模擬，重新整理網頁會重置。實際應用可串接資料庫或 CSV) ---
+# --- 1. 初始化資料庫 (在記憶體中模擬) ---
 if "order_list" not in st.session_state:
     st.session_state.order_list = [
         {"工單單號": "WO-2026001", "車牌號碼": "ABC-1234", "保養項目": "機油更換", "保養類別": "定期保養", "金額": 2500},
@@ -82,8 +83,11 @@ def generate_excel(df_d, df_s):
     labels = Reference(ws_summary, min_col=1, min_row=2, max_row=len(df_s) + 1)
     pie.add_data(data, titles_from_data=True)
     pie.set_categories(labels)
-    pie.dataLabels = pie.dataLabels or True
-    pie.dataLabels.showVal = True
+    
+    # 【修正地方】：使用安全相容的新版語法建立資料標籤
+    pie.dataLabels = DataLabelList()
+    pie.dataLabels.showVal = True  # 在 Excel 圓餅圖上顯示數值
+    
     ws_summary.add_chart(pie, "D2")
     
     # 工作表二：明細
