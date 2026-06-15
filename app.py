@@ -63,13 +63,13 @@ if img_file is not None:
             
         full_text_block = "||".join(all_texts)
         
-        # 顯示除錯紀錄，方便查看辨識字體
+        # 顯示除錯紀錄
         with st.expander("🔍 檢視 AI 影像除錯紀錄"):
             st.write(raw_lines)
 
         # ---- 核心關鍵字擷取演算法 ----
         
-        # 1. 擷取車牌號碼 (尋找「車牌」或「車號」關鍵字)
+        # 1. 擷取車牌號碼
         plate_pattern = r'[A-Z0-9]{2,4}[-─][A-Z0-9]{2,4}'
         plates_found = re.findall(plate_pattern, full_text_block)
         if plates_found:
@@ -85,7 +85,7 @@ if img_file is not None:
                                 break
                 if extracted_plate: break
 
-        # 2. 擷取行駛里程 (尋找「里程」關鍵字)
+        # 2. 擷取行駛里程
         for i, text in enumerate(all_texts):
             if "里程" in text or "公里" in text:
                 for offset in range(0, 3):
@@ -97,12 +97,11 @@ if img_file is not None:
                             break
             if extracted_mileage: break
 
-        # 3. 擷取總金額 (尋找「總金額」或「合計」關鍵字)
+        # 3. 擷取總金額
         for i, text in enumerate(all_texts):
             if any(k in text for k in ["總金額", "金額", "總計", "合計"]):
                 combined_look = "".join(all_texts[i:i+4])
                 digits = re.findall(r'[\d,.]+', combined_look)
-                # 【此處已修正修正】：確保 for 迴圈完整閉合
                 for d_str in digits:
                     clean_d = d_str.replace(",", "").split(".")[0]
                     if clean_d.isdigit() and 100 < int(clean_d) < 1000000:
@@ -120,7 +119,7 @@ if img_file is not None:
                     
         extracted_items_str = ", ".join(extracted_items)
 
-        # 順便抓工單單號當作識別 (馳加專用)
+        # 抓工單單號
         wo_found = re.search(r'D[0-9]{5,6}[-─][0-9]+', full_text_block)
         if wo_found: extracted_wo = wo_found.group(0)
 
@@ -129,13 +128,4 @@ if img_file is not None:
         col_res1, col_res2, col_res3 = st.columns(3)
         col_res1.metric("車牌號碼", extracted_plate if extracted_plate else "未偵測到")
         col_res2.metric("行駛里程", f"{extracted_mileage} KM" if extracted_mileage else "未偵測到")
-        col_res3.metric("辨識總金額", f"${extracted_price:,}" if extracted_price else "未偵測到")
-        st.text_area("自動擷取保養項目清單", value=extracted_items_str, height=70)
-
-# --- 4. 確認與填寫工單資料表單 ---
-st.header("📝 確認與填寫工單資料")
-with st.form("order_form", clear_on_submit=False):
-    col1, col2 = st.columns(2)
-    with col1:
-        wo_number = st.text_input("工單單號", value=extracted_wo if extracted_wo else f"WO-2026{len(st.session_state.order_list)+1:03d}")
-        car
+        col_res3.metric("辨識總金額", f"${extracted_price:,}" if
