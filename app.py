@@ -31,12 +31,12 @@ if "order_list" not in st.session_state:
         {"工單單號": "D260513-375", "車牌號碼": "ANV-1055", "行駛里程": "140,029", "保養項目": "215/55R17 Michelin PRIMACY 5, 輪胎拆裝工資, 輪胎平衡校正, 氮氣填充, 四輪定位-電腦3D, 煞車來令片(前/WTC), 力魔LM3318-快速清潔噴劑, 底盤拆裝工資, 煞車來令片(後/WTC), 煞車盤(後)", "保養類別": "輪胎定位", "金額": 24300},
     ]
 
-# --- 3. 全域變數初始化 (【關鍵修正】：防止一開啟網頁時 NameError) ---
+# --- 3. 全域變數初始化 ---
 extracted_wo = ""
 extracted_plate = ""
 extracted_mileage = ""
 extracted_price = 0
-extracted_items_str = ""  # 預先定義，避免下方表單找不到變數
+extracted_items_str = "" 
 
 # --- 4. AI 影像自動擷取區塊 ---
 st.header("📸 AI 工單自動擷取")
@@ -110,14 +110,30 @@ if img_file is not None:
                         break
             if extracted_price > 0: break
 
-        # 4. 擷取保養項目明細
-        item_keywords = ["輪胎", "工資", "平衡", "定位", "氮氣", "煞車", "來令片", "清潔", "噴劑", "機油", "濾網", "電瓶", "火星塞", "皮帶", "保養"]
+        # 4. 【演算法大幅升級】：改用排除法精準擷取保養項目
         extracted_items = []
+        # 設定要過濾掉的非保養項目雜訊關鍵字
+        ignore_keywords = [
+            "總金額", "金額", "總計", "合計", "車牌", "車號", "里程", "公里", 
+            "馳加", "工單", "單號", "日期", "客戶", "電話", "地址", "統一編號", 
+            "小計", "營業稅", "銷售額", "外銷", "新台幣", "備註", "應收"
+        ]
+        
         for text in raw_lines:
-            if any(k in text for k in item_keywords) and "總金額" not in text and "馳加" not in text:
-                clean_item = re.sub(r'^[A-Z0-9]{5,15}', '', text) 
-                if len(clean_item) > 2 and clean_item not in extracted_items:
-                    extracted_items.append(clean_item)
+            # 條件 A：不能包含任何系統與金額的雜訊關鍵字
+            if any(ik in text for ik in ignore_keywords):
+                continue
+                
+            # 條件 B：排除純數字、純英文字（通常是料號、電話或統編）
+            clean_text = re.sub(r'^[A-Z0-9\-_]{4,20}', '', text) # 去除行首的長串商品編號
+            clean_text = re.sub(r'[^\w\u4e00-\u9fa5\/\-]', '', clean_text) # 只留中英文字、斜線、橫線
+            
+            # 條件 C：必須包含中文（保養品項必定有中文描述，如：輪胎、更換、工資）
+            has_chinese = any('\u4e00' <= char <= '\u9fa5' for char in clean_text)
+            
+            if has_chinese and len(clean_text) >= 2:
+                if clean_text not in extracted_items:
+                    extracted_items.append(clean_text)
                     
         extracted_items_str = ", ".join(extracted_items)
 
@@ -131,7 +147,7 @@ if img_file is not None:
         col_res1.metric("車牌號碼", extracted_plate if extracted_plate else "未偵測到")
         col_res2.metric("行駛里程", f"{extracted_mileage} KM" if extracted_mileage else "未偵測到")
         col_res3.metric("辨識總金額", f"${extracted_price:,}" if extracted_price else "未偵測到")
-        st.text_area("自動擷取保養項目清單確認", value=extracted_items_str, height=70)
+        st.text_area("自動擷取保養項目清單確認", value=extracted_items_str, height=100)
 
 # --- 5. 確認與填寫工單資料表單 ---
 st.header("📝 確認與填寫工單資料")
