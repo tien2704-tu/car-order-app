@@ -31,14 +31,15 @@ if "order_list" not in st.session_state:
         {"工單單號": "D260513-375", "車牌號碼": "ANV-1055", "行駛里程": "140,029", "保養項目": "215/55R17 Michelin PRIMACY 5, 輪胎拆裝工資, 輪胎平衡校正, 氮氣填充, 四輪定位-電腦3D, 煞車來令片(前/WTC), 力魔LM3318-快速清潔噴劑, 底盤拆裝工資, 煞車來令片(後/WTC), 煞車盤(後)", "保養類別": "輪胎定位", "金額": 24300},
     ]
 
-# --- 3. AI 影像自動擷取區塊 ---
-st.header("📸 AI 工單自動擷取")
-
+# --- 3. 全域變數初始化 (【關鍵修正】：防止一開啟網頁時 NameError) ---
 extracted_wo = ""
 extracted_plate = ""
 extracted_mileage = ""
 extracted_price = 0
-extracted_items = []
+extracted_items_str = ""  # 預先定義，避免下方表單找不到變數
+
+# --- 4. AI 影像自動擷取區塊 ---
+st.header("📸 AI 工單自動擷取")
 
 input_method = st.radio("請選擇輸入方式：", ["從手機相簿上傳照片/檔案", "使用手機相機現場拍照"])
 img_file = st.file_uploader("請選擇工單照片", type=["jpg", "jpeg", "png"]) if input_method == "從手機相簿上傳照片/檔案" else st.camera_input("請對準工單拍照")
@@ -111,6 +112,7 @@ if img_file is not None:
 
         # 4. 擷取保養項目明細
         item_keywords = ["輪胎", "工資", "平衡", "定位", "氮氣", "煞車", "來令片", "清潔", "噴劑", "機油", "濾網", "電瓶", "火星塞", "皮帶", "保養"]
+        extracted_items = []
         for text in raw_lines:
             if any(k in text for k in item_keywords) and "總金額" not in text and "馳加" not in text:
                 clean_item = re.sub(r'^[A-Z0-9]{5,15}', '', text) 
@@ -129,9 +131,9 @@ if img_file is not None:
         col_res1.metric("車牌號碼", extracted_plate if extracted_plate else "未偵測到")
         col_res2.metric("行駛里程", f"{extracted_mileage} KM" if extracted_mileage else "未偵測到")
         col_res3.metric("辨識總金額", f"${extracted_price:,}" if extracted_price else "未偵測到")
-        st.text_area("自動擷取保養項目清單", value=extracted_items_str, height=70)
+        st.text_area("自動擷取保養項目清單確認", value=extracted_items_str, height=70)
 
-# --- 4. 確認與填寫工單資料表單 (確保完全閉合，包含確認按鈕) ---
+# --- 5. 確認與填寫工單資料表單 ---
 st.header("📝 確認與填寫工單資料")
 with st.form("order_form", clear_on_submit=False):
     col1, col2 = st.columns(2)
@@ -143,9 +145,9 @@ with st.form("order_form", clear_on_submit=False):
         category = st.selectbox("保養類別", ["輪胎定位", "底盤系統", "定期保養", "引擎系統", "冷氣系統", "其他"])
         price = st.number_input("金額 (元)", min_value=0, value=int(extracted_price), step=100)
         
-    item_name = st.text_area("保養項目明細描述", value=extracted_items_str if extracted_items_str else "", placeholder="項目會由 AI 自動帶入，也可手動修改")
+    item_name = st.text_area("保養項目明細描述", value=extracted_items_str, placeholder="項目會由 AI 自動帶入，也可手動修改")
     
-    # 這是最關鍵的送出按鈕，確保它在 with 表單區塊內部
+    # 表單送出按鈕
     submit_btn = st.form_submit_button("確認新增此筆工單至系統")
     
     if submit_btn:
@@ -164,7 +166,7 @@ with st.form("order_form", clear_on_submit=False):
         else:
             st.error("❌ 請確認車牌號碼與金額是否正確填寫！")
 
-# --- 5. 圖表與 Excel 匯出邏輯 ---
+# --- 6. 圖表與 Excel 匯出邏輯 ---
 df_detail = pd.DataFrame(st.session_state.order_list)
 
 st.header("📊 汽車保養類別金額統計圓餅圖")
