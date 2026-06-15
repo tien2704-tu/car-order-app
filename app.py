@@ -128,4 +128,82 @@ if img_file is not None:
         col_res1, col_res2, col_res3 = st.columns(3)
         col_res1.metric("車牌號碼", extracted_plate if extracted_plate else "未偵測到")
         col_res2.metric("行駛里程", f"{extracted_mileage} KM" if extracted_mileage else "未偵測到")
-        col_res3.metric("辨識總金額", f"${extracted_price:,}" if
+        col_res3.metric("辨識總金額", f"${extracted_price:,}" if extracted_price else "未偵測到")
+        st.text_area("自動擷取保養項目清單", value=extracted_items_str, height=70)
+
+# --- 4. 確認與填寫工單資料表單 (確保完全閉合，包含確認按鈕) ---
+st.header("📝 確認與填寫工單資料")
+with st.form("order_form", clear_on_submit=False):
+    col1, col2 = st.columns(2)
+    with col1:
+        wo_number = st.text_input("工單單號", value=extracted_wo if extracted_wo else f"WO-2026{len(st.session_state.order_list)+1:03d}")
+        car_number = st.text_input("車牌號碼", value=extracted_plate if extracted_plate else "", placeholder="例如: ANV-1055")
+        mileage = st.text_input("行駛里程 (KM)", value=extracted_mileage if extracted_mileage else "", placeholder="例如: 140,029")
+    with col2:
+        category = st.selectbox("保養類別", ["輪胎定位", "底盤系統", "定期保養", "引擎系統", "冷氣系統", "其他"])
+        price = st.number_input("金額 (元)", min_value=0, value=int(extracted_price), step=100)
+        
+    item_name = st.text_area("保養項目明細描述", value=extracted_items_str if extracted_items_str else "", placeholder="項目會由 AI 自動帶入，也可手動修改")
+    
+    # 這是最關鍵的送出按鈕，確保它在 with 表單區塊內部
+    submit_btn = st.form_submit_button("確認新增此筆工單至系統")
+    
+    if submit_btn:
+        if car_number and price > 0:
+            new_order = {
+                "工單單號": wo_number,
+                "車牌號碼": car_number,
+                "行駛里程": mileage if mileage else "未記錄",
+                "保養項目": item_name if item_name else "未填寫明細",
+                "保養類別": category,
+                "金額": price
+            }
+            st.session_state.order_list.append(new_order)
+            st.success(f"🎉 工單 {wo_number} 已成功寫入系統資料庫！")
+            st.rerun()
+        else:
+            st.error("❌ 請確認車牌號碼與金額是否正確填寫！")
+
+# --- 5. 圖表與 Excel 匯出邏輯 ---
+df_detail = pd.DataFrame(st.session_state.order_list)
+
+st.header("📊 汽車保養類別金額統計圓餅圖")
+if not df_detail.empty:
+    df_summary = df_detail.groupby("保養類別")["金額"].sum().reset_index()
+    fig = px.pie(df_summary, values='金額', names='保養類別', title='各類別累積消費比例', hole=0.3)
+    fig.update_traces(textinfo='value+percent')
+    st.plotly_chart(fig, use_container_width=True)
+
+def generate_excel(df_d, df_s):
+    output = BytesIO()
+    wb = Workbook()
+    ws_summary = wb.active
+    ws_summary.title = "類別統計摘要"
+    for r in dataframe_to_rows(df_s, index=False, header=True):
+        ws_summary.append(r)
+    pie = PieChart()
+    pie.title = "各類別保養金額比例圖"
+    data = Reference(ws_summary, min_col=2, min_row=1, max_row=len(df_s) + 1)
+    labels = Reference(ws_summary, min_col=1, min_row=2, max_row=len(df_s) + 1)
+    pie.add_data(data, titles_from_data=True)
+    pie.set_categories(labels)
+    pie.dataLabels = DataLabelList()
+    pie.dataLabels.showVal = True
+    ws_summary.add_chart(pie, "D2")
+    
+    ws_detail = wb.create_sheet(title="工單明細")
+    for r in dataframe_to_rows(df_d, index=False, header=True):
+        ws_detail.append(r)
+    wb.save(output)
+    return output.getvalue()
+
+st.header("📋 系統歷史工單總表")
+st.dataframe(df_detail, use_container_width=True)
+
+excel_data = generate_excel(df_detail, df_detail.groupby("保養類別")["金額"].sum().reset_index())
+st.download_button(
+    label="📥 匯出並下載保養工單 Excel 檔",
+    data=excel_data,
+    file_name="汽車保養工單統計表.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
